@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+requirements.txt.lock
+
+# Serverless Framework
+.serverless/
+.node_modules/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
