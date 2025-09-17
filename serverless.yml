@@ -3,13 +3,129 @@ service: requirements-api
 provider:
   name: aws
   runtime: python3.11
-  region: us-east-1
-  stage: dev
+  region: eu-central-1
+  stage: ${opt:stage, 'dev'}
+  endpointType: REGIONAL
+  tracing:
+    lambda: true
+
+  environment:
+    JOBS_TABLE: ${self:service}-${sls:stage}-jobs
+    UPLOADS_BUCKET: ${self:service}-${sls:stage}-uploads
+
+  # apiGateway:
+  #   apiKeys:
+  #     - name: ${sls:stage}-crow-nl
+  #       description: API key for CROW
+  #       customerId: crow
+  #     - name: ${sls:stage}-kweri-nl
+  #       description: API key for Kweri
+  #       customerId: kweri      
+  #   usagePlan:
+  #     quota:
+  #       limit: 1000        # Maximum requests
+  #       period: MONTH      # Time period (DAY, WEEK, MONTH)
+  #     throttle:
+  #       burstLimit: 40    # Max concurrent requests
+  #       rateLimit: 8      # Requests per second
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+          Resource:
+            - arn:aws:s3:::${self:provider.environment.UPLOADS_BUCKET}/*
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+            - dynamodb:Scan
+            - dynamodb:Query
+          Resource:
+            - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.JOBS_TABLE}
+        # CloudWatch Logs for Lambda functions
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"            
 
 functions:
-  hello:
-    handler: handler.hello
+  submitJob:
+    handler: handler_submit_job.submit_job
     events:
       - httpApi:
-          path: /hello
+          path: /jobs
+          method: post
+          # private: true
+
+  getResults:
+    handler: handler_get_results.get_results
+    events:
+      - httpApi:
+          path: /jobs/{jobId}/results
           method: get
+          # private: true
+
+  parseSync:
+    handler: handler_parse_sync.parse_sync
+    events:
+      - httpApi:
+          path: /parse/sync
+          method: post
+          # private: true
+
+  parseJob:
+    handler: handler_parse_job.parse_job
+    # triggered asynchronously (e.g. S3 event or EventBridge)
+    events:
+      - s3:
+          bucket: ${self:provider.environment.UPLOADS_BUCKET}
+          event: s3:ObjectCreated:*
+
+
+resources:
+  Resources:
+    UploadsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.UPLOADS_BUCKET}
+
+    JobsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.JOBS_TABLE}
+        AttributeDefinitions:
+          - AttributeName: jobId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: jobId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    # Optional: API Gateway HTTP API (auto-created by Serverless)
+    # ApiGatewayHttpApi:
+    #   Type: AWS::ApiGatewayV2::Api
+    #   Properties:
+    #     Name: ${self:service}-${self:provider.stage}-api
+    #     ProtocolType: HTTP
+
+
+plugins:
+  - serverless-python-requirements
+  - serverless-openapi-integration-helper
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+    slim: true
+
+  openapi:
+    file: schema.yml           # Path to your OpenAPI schema
+    basePath: /v1              # Optional, if your schema has basePath
