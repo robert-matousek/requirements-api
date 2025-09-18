@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "serverless-openapi-integration-helper": "^2.3.0",
+    "serverless-python-requirements": "^6.1.2"
+  }
+}

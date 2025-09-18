@@ -1,4 +1,21 @@
 service: requirements-api
+frameworkVersion: '4'
+
+custom:
+  pythonRequirements:
+    dockerizePip: false
+    slim: true
+  # openapi:
+  #   file: schema.yml           # Path to your OpenAPI schema
+  #   basePath: /v1              # Optional, if your schema has basePath
+  openApiIntegration:
+    inputFile: schema.yml
+    package: true
+    inputDirectory: ./       # relative to your project root
+    cors: true
+    autoMock: false
+    validation: false
+    stage: ${sls:stage}
 
 provider:
   name: aws
@@ -8,11 +25,17 @@ provider:
   endpointType: REGIONAL
   tracing:
     lambda: true
+  # s3:
+  #   uploads:
+  #     name: requirements-api-dev-890586946656-uploads
+  #     external: true    
 
   environment:
     JOBS_TABLE: ${self:service}-${sls:stage}-jobs
-    UPLOADS_BUCKET: ${self:service}-${sls:stage}-uploads
-
+    UPLOADS_BUCKET: requirements-api-dev-890586946656-uploads 
+    # ${self:service}-${sls:stage}-${aws:accountId}-uploads
+    OPENAI_API_KEY: ${env:OPENAI_API_KEY}
+    
   # apiGateway:
   #   apiKeys:
   #     - name: ${sls:stage}-crow-nl
@@ -32,29 +55,55 @@ provider:
   iam:
     role:
       statements:
-        - Effect: Allow
-          Action:
-            - s3:PutObject
-            - s3:GetObject
-            - s3:DeleteObject
-          Resource:
-            - arn:aws:s3:::${self:provider.environment.UPLOADS_BUCKET}/*
-        - Effect: Allow
-          Action:
-            - dynamodb:PutItem
-            - dynamodb:GetItem
-            - dynamodb:UpdateItem
-            - dynamodb:Scan
-            - dynamodb:Query
-          Resource:
-            - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.JOBS_TABLE}
-        # CloudWatch Logs for Lambda functions
-        - Effect: Allow
-          Action:
-            - logs:CreateLogGroup
-            - logs:CreateLogStream
-            - logs:PutLogEvents
-          Resource: "*"            
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+          - s3:GetObject
+          - s3:DeleteObject
+        Resource:
+          # - arn:aws:s3:::${self:provider.environment.UPLOADS_BUCKET}/*
+          - !Sub arn:aws:s3:::${self:service}-${sls:stage}-${aws:accountId}-uploads/*
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+          - dynamodb:GetItem
+          - dynamodb:UpdateItem
+          - dynamodb:Scan
+          - dynamodb:Query
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.JOBS_TABLE}
+      # CloudWatch Logs for Lambda functions
+      - Effect: Allow
+        Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+        Resource: "*"
+
+resources:
+  Resources:
+    # UploadsBucket:
+    #   Type: AWS::S3::Bucket
+    #   Properties:
+    #     BucketName: ${self:provider.environment.UPLOADS_BUCKET}
+    #   DeletionPolicy: Retain  # Keep existing bucket
+    JobsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.JOBS_TABLE}
+        AttributeDefinitions:
+          - AttributeName: jobId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: jobId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+    # Optional: API Gateway HTTP API (auto-created by Serverless)
+    # ApiGatewayHttpApi:
+    #   Type: AWS::ApiGatewayV2::Api
+    #   Properties:
+    #     Name: ${self:service}-${self:provider.stage}-api
+    #     ProtocolType: HTTP
 
 functions:
   submitJob:
@@ -86,46 +135,32 @@ functions:
     # triggered asynchronously (e.g. S3 event or EventBridge)
     events:
       - s3:
-          bucket: ${self:provider.environment.UPLOADS_BUCKET}
+          # bucket: ${self:provider.environment.UPLOADS_BUCKET}
+          bucket: requirements-api-dev-890586946656-uploads
           event: s3:ObjectCreated:*
-
-
-resources:
-  Resources:
-    UploadsBucket:
-      Type: AWS::S3::Bucket
-      Properties:
-        BucketName: ${self:provider.environment.UPLOADS_BUCKET}
-
-    JobsTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:provider.environment.JOBS_TABLE}
-        AttributeDefinitions:
-          - AttributeName: jobId
-            AttributeType: S
-        KeySchema:
-          - AttributeName: jobId
-            KeyType: HASH
-        BillingMode: PAY_PER_REQUEST
-
-    # Optional: API Gateway HTTP API (auto-created by Serverless)
-    # ApiGatewayHttpApi:
-    #   Type: AWS::ApiGatewayV2::Api
-    #   Properties:
-    #     Name: ${self:service}-${self:provider.stage}-api
-    #     ProtocolType: HTTP
-
 
 plugins:
   - serverless-python-requirements
   - serverless-openapi-integration-helper
 
-custom:
-  pythonRequirements:
-    dockerizePip: true
-    slim: true
+package:
+  patterns:
+    - 'handler_*.py'
+    - 'llm/**'
+    - 'datamodels.py'
+    - 'utils.py'
+    - 'requirements.txt'
 
-  openapi:
-    file: schema.yml           # Path to your OpenAPI schema
-    basePath: /v1              # Optional, if your schema has basePath
+    # Exclude stuff you don’t want
+    - '!node_modules/**'
+    - '!venv/**'
+    - '!.venv/**'
+    - '!__pycache__/**'
+    - '!tests/**'
+    - '!docs/**'
+    - '!.git/**'
+    - '!.gitignore'
+    - '!README.md'
+    - '!*.log'
+    - '!*.csv'
+    - '!*.xml'

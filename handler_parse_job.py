@@ -12,7 +12,6 @@ s3_client = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
 jobs_table = dynamodb.Table(JOBS_TABLE)
 
-
 def parse_job(event, context):
     """
     Lambda triggered by S3 'ObjectCreated:*' event.

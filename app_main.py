@@ -2,13 +2,10 @@ import re
 import time
 
 from datamodels import SectionType
-from dotenv import load_dotenv
 from llm.section_classification import classify_section
 from llm.terminology_extraction import extract_terms
 from llm.requirement_extraction import extract_requirements
 from lxml import etree
-
-load_dotenv()  # This will read your .env file
 
 """
 Description:
